@@ -43,20 +43,88 @@ function Find-SteamGame([string[]]$names) {
   foreach ($l in ($libs | Select-Object -Unique)) { foreach ($n in $names) { $p = "$l\steamapps\common\$n"; if (Test-Path $p) { return $p } } }
   return ''
 }
-if (-not $Fo4) { $Fo4 = Find-SteamGame 'Fallout 4' }
-if (-not $Fo3) { $Fo3 = Find-SteamGame 'Fallout 3 goty', 'Fallout 3' }
-if (-not $Fnv) { $Fnv = Find-SteamGame 'Fallout New Vegas' }
-if (-not $Inst) {                                 # newest unpacked installer (the folder holding Fallout34Setup.exe + installer.ini)
-  $cand = Get-ChildItem $Root -Recurse -Depth 3 -Filter Fallout34Setup.exe -File -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.DirectoryName 'installer.ini') }
-  $Inst = $cand | Sort-Object { $v = '0.0'; $f = Join-Path $_.DirectoryName 'VERSION'; if (Test-Path $f) { $v = [string](Get-Content $f | Select-Object -First 1) }; try { [version]$v.Trim() } catch { [version]'0.0' } } -Descending | Select-Object -First 1 -ExpandProperty DirectoryName
-  if (-not $Inst) { $Inst = "$Root\Fallout34_Installer" }
+# saved choices (folders picked in the window) - tools\settings.json
+$SettingsFile = "$Root\tools\settings.json"; $Settings = @{}
+if (Test-Path $SettingsFile) { try { $j = Get-Content $SettingsFile -Raw | ConvertFrom-Json; foreach ($pr in $j.PSObject.Properties) { $Settings[$pr.Name] = [string]$pr.Value } } catch {} }
+function Save-Cfg { New-Item -ItemType Directory (Split-Path $SettingsFile) -Force | Out-Null; $Settings | ConvertTo-Json | Set-Content $SettingsFile }
+
+# games: command line > saved choice > Steam libraries
+$GameDefs = @(
+  @{ k = 'Fo4'; n = 'Fallout 4';          exe = 'Fallout4.exe';  steam = @('Fallout 4') }
+  @{ k = 'Fo3'; n = 'Fallout 3';          exe = 'Fallout3.exe';  steam = @('Fallout 3 goty', 'Fallout 3') }
+  @{ k = 'Fnv'; n = 'Fallout: New Vegas'; exe = 'FalloutNV.exe'; steam = @('Fallout New Vegas') }
+)
+function Test-GameDir($def, $dir) { return [bool]($dir -and (Test-Path (Join-Path $dir $def.exe))) }
+foreach ($gd in $GameDefs) {
+  $cur = Get-Variable -Name $gd.k -ValueOnly
+  if (-not $cur -and (Test-GameDir $gd $Settings[$gd.k])) { $cur = $Settings[$gd.k] }
+  if (-not $cur) { $cur = Find-SteamGame $gd.steam }
+  Set-Variable -Name $gd.k -Value $cur
 }
-$Missing = @(); if (-not ($Fo4 -and (Test-Path "$Fo4\Fallout4.exe"))) { $Missing += 'Fallout 4' }; if (-not ($Fo3 -and (Test-Path "$Fo3\Data"))) { $Missing += 'Fallout 3' }; if (-not ($Fnv -and (Test-Path "$Fnv\Data"))) { $Missing += 'Fallout: New Vegas' }
+
+# Fallout 34 installer: command line > saved choice > newest one found next to the launcher or in the usual download places
+function Test-InstDir($d) { return [bool]($d -and (Test-Path (Join-Path $d 'Fallout34Setup.exe')) -and (Test-Path (Join-Path $d 'installer.ini'))) }
+function Get-InstVersion($d) { $v = '0.0'; $f = Join-Path $d 'VERSION'; if (Test-Path $f) { $v = [string](Get-Content $f | Select-Object -First 1) }; try { return [version]$v.Trim() } catch { return [version]'0.0' } }
+function Find-Installer([string[]]$where) {
+  $cand = @()
+  foreach ($w in $where) {
+    if (-not ($w -and (Test-Path $w))) { continue }
+    $cand += Get-ChildItem $w -Recurse -Depth 3 -Filter Fallout34Setup.exe -File -ErrorAction SilentlyContinue | Where-Object { Test-InstDir $_.DirectoryName } | ForEach-Object DirectoryName
+  }
+  if (-not $cand) { return '' }
+  return [string]($cand | Sort-Object { Get-InstVersion $_ } -Descending | Select-Object -First 1)
+}
+function Get-SearchDirs {
+  $d = @($Root, (Join-Path $env:USERPROFILE 'Downloads'))
+  foreach ($sf in 'Desktop', 'MyDocuments') { try { $d += [Environment]::GetFolderPath($sf) } catch {} }
+  return @($d | Where-Object { $_ } | Select-Object -Unique)
+}
+function Find-InstallerZip {                      # a downloaded, still zipped installer
+  foreach ($w in (Get-SearchDirs)) {
+    if (-not (Test-Path $w)) { continue }
+    $z = Get-ChildItem $w -File -Filter '*.zip' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Fallout\s*34.*Installer' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($z) { return $z.FullName }
+  }
+  return ''
+}
+function Resolve-InstallerPick($path) {           # a picked folder, Fallout34Setup.exe or zip -> the installer folder ('' if it is not one)
+  if (-not ($path -and (Test-Path $path))) { return '' }
+  $it = Get-Item $path
+  if ($it.PSIsContainer) { if (Test-InstDir $it.FullName) { return $it.FullName }; return (Find-Installer @($it.FullName)) }
+  if ($it.Extension -ieq '.zip') {
+    $dest = Join-Path $Root $it.BaseName
+    Expand-Archive -Path $it.FullName -DestinationPath $dest -Force
+    return (Find-Installer @($dest))
+  }
+  $d = $it.DirectoryName
+  if (Test-InstDir $d) { return $d }
+  $up = Split-Path (Split-Path $d)                # ...\payload\app\Fallout34Setup.exe -> the folder two levels up
+  if (Test-InstDir $up) { return $up }
+  return ''
+}
+if (-not $Inst -and (Test-InstDir $Settings['Inst'])) { $Inst = $Settings['Inst'] }
+if (-not $Inst) { $Inst = Find-Installer @($Root) }
+if (-not $Inst -and -not $Nxm) { $Inst = Find-Installer @(Get-SearchDirs | Where-Object { $_ -ne $Root }) }
+if (-not $Inst) { $Inst = '' }
+
+$IsWindowMode = -not ($Nxm -or $Step -or $Console)
+$Missing = @($GameDefs | Where-Object { -not (Test-GameDir $_ (Get-Variable -Name $_.k -ValueOnly)) })
 if ($Missing -and -not $Nxm) {
-  $msg = "Could not find: $($Missing -join ', ').`nInstall them through Steam, or pass the folders:  -Fo4 <path> -Fo3 <path> -Fnv <path>"
-  Write-Host $msg -ForegroundColor Red
-  try { Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.MessageBox]::Show($msg, 'Fallout 34 Setup') } catch {}
-  return
+  if ($IsWindowMode) {                            # let the player point at the folder
+    Add-Type -AssemblyName System.Windows.Forms
+    foreach ($gd in $Missing) {
+      while ($true) {
+        $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dlg.Description = "$($gd.n) was not found. Select the folder that contains $($gd.exe)."
+        if ($dlg.ShowDialog() -ne 'OK') { [void][System.Windows.Forms.MessageBox]::Show("$($gd.n) is required. Install it, then start the launcher again.", 'Fallout 34 Setup'); return }
+        if (Test-GameDir $gd $dlg.SelectedPath) { Set-Variable -Name $gd.k -Value $dlg.SelectedPath; $Settings[$gd.k] = $dlg.SelectedPath; Save-Cfg; break }
+        [void][System.Windows.Forms.MessageBox]::Show("$($gd.exe) is not in that folder.", 'Fallout 34 Setup')
+      }
+    }
+  } else {
+    Write-Host ("Could not find: " + (($Missing | ForEach-Object n) -join ', ') + ". Start the launcher window to pick the folders, or pass -Fo4 <path> -Fo3 <path> -Fnv <path>") -ForegroundColor Red
+    return
+  }
 }
 
 if (-not $Docs) { $Docs = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'My Games\Fallout4' }
@@ -160,9 +228,9 @@ function Test-FixesApplied { return ((Test-Path "$Docs\Fallout4Custom.ini") -and
 function Set-PluginActive($name, [bool]$on) {                # Fallout 4 plugins.txt: "*Name" = active, "Name" = inactive
   $pt = "$env:LOCALAPPDATA\Fallout4\plugins.txt"; New-Item -ItemType Directory (Split-Path $pt) -Force | Out-Null
   $lines = @(); if (Test-Path $pt) { $lines = @(Get-Content $pt) }
-  $rx = '^\*?' + [regex]::Escape($name) + '\s*$'; $want = $name; if ($on) { $want = "*$name" }
-  if ($lines | Where-Object { $_ -match $rx }) { $lines = $lines | ForEach-Object { if ($_ -match $rx) { $want } else { $_ } } }
-  else { $lines += $want }
+  $rx = '^\*?' + [regex]::Escape($name) + '\s*$'; $entry = $name; if ($on) { $entry = "*$name" }
+  if ($lines | Where-Object { $_ -match $rx }) { $lines = $lines | ForEach-Object { if ($_ -match $rx) { $entry } else { $_ } } }
+  else { $lines += $entry }
   Set-Content $pt $lines
 }
 function Get-MissingReqs { @($Req.GetEnumerator() | Where-Object { -not (Test-Path (Join-Path $Fo4 $_.Value)) }) }
@@ -172,12 +240,12 @@ function Get-ConverterStage {                     # "FNV: meshes | FO3: plugin" 
   $parts = @()
   foreach ($w in "$Root\Fallout34_Work", "$Fo4\Fallout34_Work") {
     foreach ($g in 'fnv', 'fo3') {
-      $log = "$w\$g\convert.log"
-      if (-not (Test-Path $log)) { continue }
-      $line = Get-Content $log -Tail 80 -ErrorAction SilentlyContinue | Where-Object { $_ -like '=== *' } | Select-Object -Last 1
-      $stage = 'starting'
-      if ($line) { $stage = ($line.Substring(4) -split ':')[0].Trim() }
-      $parts += ('{0}: {1}' -f $g.ToUpper(), $stage)
+      $convLog = "$w\$g\convert.log"
+      if (-not (Test-Path $convLog)) { continue }
+      $line = Get-Content $convLog -Tail 80 -ErrorAction SilentlyContinue | Where-Object { $_ -like '=== *' } | Select-Object -Last 1
+      $phase = 'starting'
+      if ($line) { $phase = ($line.Substring(4) -split ':')[0].Trim() }
+      $parts += ('{0}: {1}' -f $g.ToUpper(), $phase)
     }
     if ($parts) { break }
   }
@@ -361,8 +429,8 @@ function Do-Install {
     if ($Presets.ContainsKey($e.m)) {
       $all = @(Get-ChildItem $tmp -Recurse); $bad = $null; $plan = @()
       foreach ($pz in $Presets[$e.m]) {
-        $want = $sep + ($pz.s -replace '\\', $sep)
-        $hit = $all | Where-Object { $_.FullName.EndsWith($want, [StringComparison]::OrdinalIgnoreCase) } | Sort-Object { $_.FullName.Length } | Select-Object -First 1
+        $tail = $sep + ($pz.s -replace '\\', $sep)
+        $hit = $all | Where-Object { $_.FullName.EndsWith($tail, [StringComparison]::OrdinalIgnoreCase) } | Sort-Object { $_.FullName.Length } | Select-Object -First 1
         if (-not $hit) { $bad = $pz.s; break }
         $plan += ,@($hit, (Join-Path $GameDir[$e.d] $pz.d))
       }
@@ -430,7 +498,7 @@ function Do-Run {
   if ((Get-Fo4Version) -notlike "$Want*") { throw 'Downgrade first.' }
   $miss = Get-MissingReqs
   if ($miss) { throw ('Still missing: ' + (($miss | ForEach-Object Key) -join ', ')) }
-  if (-not (Test-Path "$Inst\Fallout34Setup.exe")) { throw "Installer not found: $Inst" }
+  if (-not (Test-InstDir $Inst)) { throw 'The Fallout 34 installer was not found. Press CHOOSE INSTALLER in the launcher window (or pass -Inst <folder>).' }
   Say "Installer: $Inst  (version $((Get-Content "$Inst\VERSION" -ErrorAction SilentlyContinue | Select-Object -First 1)))"
   $bak = "$Root\Backup_preF34"; New-Item -ItemType Directory $bak -Force | Out-Null      # backups first, never overwritten
   if ((Test-Path "$env:LOCALAPPDATA\Fallout4\plugins.txt") -and -not (Test-Path "$bak\plugins.txt")) { Copy-Item "$env:LOCALAPPDATA\Fallout4\plugins.txt" $bak }
@@ -551,6 +619,7 @@ function Get-NextStep {
   }
   if (@($broken | Where-Object { -not (Get-Staged $_) }).Count) { return @{ s = '2'; t = 'Download the required mods' } }
   if ($broken -or @(Get-MissingReqs).Count) { return @{ s = '3'; t = 'Install the mods' } }
+  if (-not (Test-InstDir $Inst)) { return @{ s = 'I'; t = 'Fallout 34 installer not found - press CHOOSE INSTALLER' } }
   return @{ s = '4'; t = 'Run the Fallout 34 converter (2-4 hours)' }
 }
 
@@ -641,9 +710,10 @@ function New-Button($text, $x, $y, $w) {
 
 $null      = New-Label 'FALLOUT 34 SETUP' 15 10 870 42 $fBig $cFg
 $null      = New-Label 'Fallout 3 + New Vegas inside Fallout 4' 18 54 870 20 $fMono $cDim
-$lblVer    = New-Label '' 18 84 870 22 $fMono $cFg
-$lblSpace  = New-Label '' 18 106 870 22 $fMono $cFg
-$lblInst   = New-Label '' 18 128 870 22 $fMono $cFg
+$lblVer    = New-Label '' 18 84 645 22 $fMono $cFg
+$lblSpace  = New-Label '' 18 106 645 22 $fMono $cFg
+$lblInst   = New-Label '' 18 128 645 22 $fMono $cFg
+$btnI      = New-Button 'CHOOSE INSTALLER' 675 96 210
 $null      = New-Label 'MODS' 15 160 400 20 $fBold $cDim
 $null      = New-Label 'CHECKS' 520 160 300 20 $fBold $cDim
 $lvMods    = New-List 15 184 490 340 330 138
@@ -658,8 +728,9 @@ $btnR      = New-Button 'REPAIR MODS'      15 618 210
 $btnF      = New-Button 'APPLY GAME FIXES' 235 618 210
 $btnB      = New-Button 'FIX BLACK SCREEN' 455 618 210
 $btnO      = New-Button 'ONLINE'           675 618 210
-$btnPlay   = New-Button 'PLAY FALLOUT 34'  15 666 310
-$btnFolder = New-Button 'OPEN PROJECT FOLDER' 335 666 330
+$btnPlay   = New-Button 'PLAY FALLOUT 34'  15 666 210
+$btnSet    = New-Button 'GAME SETTINGS'    235 666 210
+$btnFolder = New-Button 'OPEN PROJECT FOLDER' 455 666 210
 $btnQuit   = New-Button 'QUIT' 675 666 210
 $lblStatus = New-Label 'Ready.' 15 714 870 22 $fMono $cDim
 
@@ -696,8 +767,8 @@ function Update-Ui {
     $lblVer.Text = "Fallout 4 version : $v   (needs $Want)"
     if ($v -like "$Want*") { $lblVer.ForeColor = $cFg } else { $lblVer.ForeColor = $cBad }
     $lblSpace.Text = 'Free space        : {0}: {1} GB    {2}: {3} GB' -f (Get-Item $Fo4).PSDrive.Name, (Get-FreeGB $Fo4), (Get-Item $Root).PSDrive.Name, (Get-FreeGB $Root)
-    $iv = ''; if (Test-Path "$Inst\VERSION") { $iv = [string](Get-Content "$Inst\VERSION" | Select-Object -First 1) }
-    if ($iv) { $lblInst.Text = "Installer         : Fallout 34 $iv"; $lblInst.ForeColor = $cFg } else { $lblInst.Text = "Installer         : NOT FOUND  $Inst"; $lblInst.ForeColor = $cBad }
+    $iv = ''; if ($Inst -and (Test-Path "$Inst\VERSION")) { $iv = [string](Get-Content "$Inst\VERSION" | Select-Object -First 1) }
+    if (Test-InstDir $Inst) { $lblInst.Text = "Installer         : Fallout 34 $iv"; $lblInst.ForeColor = $cFg } else { $lblInst.Text = 'Installer         : NOT FOUND - press CHOOSE INSTALLER'; $lblInst.ForeColor = $cBad }
 
     foreach ($e in $Files) {
       $st = Get-ModState $e
@@ -727,6 +798,9 @@ function Update-Ui {
     }
     $btnPlay.Enabled = ($converted -and -not $busy)
     $btnB.Enabled    = -not ((Test-Busy) -or $conv)
+    $btnSet.Enabled  = -not $busy
+    $btnI.Enabled    = -not ((Test-Busy) -or $conv)
+    if ((-not $busy) -and $next.s -eq 'I') { $btnI.FlatAppearance.BorderSize = 3 } else { $btnI.FlatAppearance.BorderSize = 1 }
     if ($gameUp) {
       $lblNext.Text   = 'FALLOUT 4 IS RUNNING'
       $lblStatus.Text = 'Buttons unlock when you close the game. Stuck on a black screen? Press FIX BLACK SCREEN.'
@@ -747,11 +821,44 @@ foreach ($b in $stepButtons) { $b.Add_Click({ Start-Step $this.Tag }) }
 $btnB.Add_Click({ Start-Step $this.Tag })
 $btnPlay.Add_Click({ Start-Process "$Fo4\f4se_loader.exe" -WorkingDirectory $Fo4 })
 $btnFolder.Add_Click({ Start-Process explorer.exe $Root })
+$btnSet.Add_Click({                                          # Bethesda's own launcher, for resolution / graphics options
+  if (-not (Test-Path "$Fo4\Fallout4Launcher.exe")) { [void][System.Windows.Forms.MessageBox]::Show("Fallout4Launcher.exe was not found in`n$Fo4", 'Fallout 34 Setup'); return }
+  $msg = "The Fallout 4 launcher opens next.`n`n1. Click OPTIONS and set the resolution and detail.`n2. Tick Windowed Mode and Borderless (exclusive fullscreen can give a black screen).`n3. Click OK, then EXIT.`n`nDo NOT press Play in that launcher - it starts the game without Fallout 34. Use PLAY FALLOUT 34 here."
+  if ([System.Windows.Forms.MessageBox]::Show($msg, 'Game settings', 'OKCancel') -eq 'OK') { Start-Process "$Fo4\Fallout4Launcher.exe" -WorkingDirectory $Fo4 }
+})
 $btnQuit.Add_Click({ $form.Close() })
+
+function Set-Installer($dir) {                               # remember a valid installer folder
+  $script:Inst = $dir; $Settings['Inst'] = $dir; Save-Cfg; Update-Ui
+}
+function Invoke-InstallerPick($path) {
+  $lblStatus.Text = 'Looking at the installer (unpacking a zip takes a minute)...'; $form.Refresh()
+  $d = ''
+  try { $d = Resolve-InstallerPick $path } catch { [void][System.Windows.Forms.MessageBox]::Show("Could not open that: $($_.Exception.Message)", 'Fallout 34 Setup'); return }
+  if ($d) { Set-Installer $d }
+  else { [void][System.Windows.Forms.MessageBox]::Show("That is not a Fallout 34 installer.`nPick Fallout34Setup.exe from the unpacked installer, or the installer zip.", 'Fallout 34 Setup') }
+}
+$btnI.Add_Click({
+  $dlg = New-Object System.Windows.Forms.OpenFileDialog
+  $dlg.Title  = 'Pick Fallout34Setup.exe (unpacked installer) or the installer zip'
+  $dlg.Filter = 'Fallout 34 installer|Fallout34Setup.exe;*.zip|All files|*.*'
+  if ($Inst -and (Test-Path $Inst)) { $dlg.InitialDirectory = $Inst }
+  if ($dlg.ShowDialog() -eq 'OK') { Invoke-InstallerPick $dlg.FileName }
+})
+function Find-InstallerAtStart {                             # nothing found automatically: offer a zip, else explain
+  if (Test-InstDir $Inst) { return }
+  $zip = Find-InstallerZip
+  if ($zip) {
+    $q = "Found a Fallout 34 installer zip:`n$zip`n`nUnpack it next to the launcher and use it?"
+    if ([System.Windows.Forms.MessageBox]::Show($q, 'Fallout 34 Setup', 'YesNo') -eq 'Yes') { Invoke-InstallerPick $zip }
+    return
+  }
+  [void][System.Windows.Forms.MessageBox]::Show("The Fallout 34 installer was not found on this PC.`n`nGet it from the Fallout 34 page (github.com/cobaltmods/Fallout34_Installer), then press CHOOSE INSTALLER and pick the zip or Fallout34Setup.exe.`n`nYou can do steps 1-3 in the meantime.", 'Fallout 34 Setup')
+}
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 2000
 $timer.Add_Tick({ Update-Ui })
-$form.Add_Shown({ Update-Ui; $timer.Start() })
+$form.Add_Shown({ Update-Ui; Find-InstallerAtStart; $timer.Start() })
 $form.Add_FormClosed({ $timer.Stop() })
 [void]$form.ShowDialog()
