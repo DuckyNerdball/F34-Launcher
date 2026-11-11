@@ -1,7 +1,7 @@
 # F34 Launcher
 
 Unofficial helper that prepares a PC for the **Fallout 34** installer, starts it, and keeps the setup healthy afterwards.
-Ships no game or mod files. Everything comes from the user's own Steam and Nexus accounts.
+Ships no game or mod files. Everything comes from the user's own Steam and Nexus accounts. Yes I used AI to assist me in building this.
 
 ## Run it
 
