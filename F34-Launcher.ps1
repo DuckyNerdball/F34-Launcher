@@ -20,7 +20,8 @@ param(
   [string]$Fo3,
   [string]$Fnv,
   [string]$Root,                                  # working folder (downloads, backups, tools): this script's folder
-  [string]$Inst                                   # unpacked Fallout 34 installer folder: newest one found under $Root
+  [string]$Inst,                                  # unpacked Fallout 34 installer folder: newest one found under $Root
+  [string]$Docs                                   # Documents\My Games\Fallout4 (found through Windows, follows OneDrive)
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -58,6 +59,7 @@ if ($Missing -and -not $Nxm) {
   return
 }
 
+if (-not $Docs) { $Docs = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'My Games\Fallout4' }
 $Stage = "$Root\F34_Downloads"; $Tools = "$Root\tools"; $Log = "$Tools\nxm.log"; $KeyFile = "$Tools\nexus.key"
 $Want  = '1.10.984'
 foreach ($d in $Tools, "$Stage\FO4", "$Stage\FO3", "$Stage\FNV", "$Stage\.installed") { New-Item -ItemType Directory $d -Force | Out-Null }
@@ -65,20 +67,23 @@ $GameDir = @{ FO4 = $Fo4; FO3 = $Fo3; FNV = $Fnv }
 
 # game domain, mod id, file id, staging folder, label   (file ids looked up on Nexus 2026-11-10)
 $Files = @(
-  @{ g='fallout4'; m=42147; f=316287;     d='FO4'; n='F4SE 0.7.2' }
-  @{ g='fallout4'; m=47327; f=316411;     d='FO4'; n='Address Library 1.10.984' }
-  @{ g='fallout4'; m=64880; f=350591;     d='FO4'; n='Buffout4 NG 1.37.0' }
-  @{ g='fallout4'; m=27216; f=321359;     d='FO4'; n='Extended Dialogue Interface 1.4.0' }
-  @{ g='fallout4'; m=44798; f=342947;     d='FO4'; n='High FPS Physics Fix NG 0.8.11' }
-  @{ g='fallout4'; m=28822; f=318312;     d='FO4'; n='LevelUpMenuEx (prkf 1.10.984)' }
-  @{ g='fallout4'; m=21497; f=316359;     d='FO4'; n='MCM 1.40 beta 2' }
-  @{ g='fallout4'; m=48758; f=254844;     d='FO4'; n='FallUI - Inventory 2.2.1' }
-  @{ g='fallout4'; m=29447; f=415750;     d='FO4'; n='Backpacks of the Commonwealth 2.1.3' }
-  @{ g='fallout3'; m=25911; f=1000025897; d='FO3'; n='FO3 ATMOS 1.2' }
-  @{ g='fallout3'; m=5573;  f=1000016117; d='FO3'; n='FO3 DC Interiors combo 2.9.2' }
-  @{ g='fallout3'; m=8069;  f=72840;      d='FO3'; n='FO3 Street Lights v2' }
-  @{ g='newvegas'; m=35794; f=1000029961; d='FNV'; n='FNV Interior Lighting Overhaul 6.9' }
-  @{ g='newvegas'; m=74295; f=1000183826; d='FNV'; n='FNV Mesh Improvement Mod 1.14hf2' }
+  # c = a file that proves the mod is installed (relative to that game's folder). opt = only needed for that feature.
+  @{ g='fallout4'; m=42147; f=316287;     d='FO4'; n='F4SE 0.7.2';                          c='f4se_loader.exe' }
+  @{ g='fallout4'; m=47327; f=316411;     d='FO4'; n='Address Library 1.10.984';            c='Data\F4SE\Plugins\version-1-10-984-0.bin' }
+  @{ g='fallout4'; m=64880; f=350591;     d='FO4'; n='Buffout4 NG 1.37.0';                  c='Data\F4SE\Plugins\Buffout4.dll' }
+  @{ g='fallout4'; m=27216; f=321359;     d='FO4'; n='Extended Dialogue Interface 1.4.0';   c='Data\F4SE\Plugins\XDI.dll' }
+  @{ g='fallout4'; m=44798; f=342947;     d='FO4'; n='High FPS Physics Fix NG 0.8.11';      c='Data\F4SE\Plugins\HighFPSPhysicsFix.dll' }
+  @{ g='fallout4'; m=28822; f=318312;     d='FO4'; n='LevelUpMenuEx (prkf 1.10.984)';       c='Data\F4SE\Plugins\PRKF.dll' }
+  @{ g='fallout4'; m=21497; f=316359;     d='FO4'; n='MCM 1.40 beta 2';                     c='Data\F4SE\Plugins\mcm.dll' }
+  @{ g='fallout4'; m=48758; f=254844;     d='FO4'; n='FallUI - Inventory 2.2.1';            c='Data\MCM\Config\FallUI\config.json' }
+  @{ g='fallout4'; m=29447; f=415750;     d='FO4'; n='Backpacks of the Commonwealth 2.1.3'; c='Data\Backpacks of the Commonwealth.esp' }
+  @{ g='fallout3'; m=25911; f=1000025897; d='FO3'; n='FO3 ATMOS 1.2';                       c='Data\Interior Lighting.esp' }
+  @{ g='fallout3'; m=5573;  f=1000016117; d='FO3'; n='FO3 DC Interiors combo 2.9.2';        c='Data\DCInteriors_ComboEdition.esm' }
+  @{ g='fallout3'; m=8069;  f=72840;      d='FO3'; n='FO3 Street Lights v2';                c='Data\StreetLights.esm' }
+  @{ g='newvegas'; m=35794; f=1000029961; d='FNV'; n='FNV Interior Lighting Overhaul 6.9';  c='Data\Interior Lighting Overhaul - Core.esm' }
+  @{ g='newvegas'; m=74295; f=1000183826; d='FNV'; n='FNV Mesh Improvement Mod 1.14hf2';    c='Data\NVMIM.esp' }
+  @{ g='fallout4'; m=105090; f=410383;    d='FO4'; n='Online: F4SE Menu Framework 1.53';    c='Data\F4SE\Plugins\F4SEMenuFramework.dll'; opt='online' }
+  @{ g='fallout4'; m=29119;  f=379262;    d='FO4'; n='Online: FallSouls 1.2.0';             c='Data\F4SE\Plugins\FallSouls.dll';         opt='online' }
 )
 $Req = [ordered]@{
   'F4SE'='f4se_loader.exe'; 'F4SE scripts'='Data\Scripts\F4SE.pex'
@@ -119,6 +124,47 @@ $Presets = @{
 function Get-Fo4Version { if (Test-Path "$Fo4\Fallout4.exe") { (Get-Item "$Fo4\Fallout4.exe").VersionInfo.FileVersion } else { 'NOT FOUND' } }
 function Get-FreeGB($p) { [math]::Round((Get-PSDrive (Get-Item $p).PSDrive.Name).Free / 1GB) }
 function Get-Staged($e) { Get-ChildItem "$Stage\$($e.d)" -File -Filter "$($e.m)__*" -ErrorAction SilentlyContinue | Where-Object Extension -ne '.part' | Select-Object -First 1 }
+function Test-Online    { return (Test-Path "$Fo4\Data\F4SE\Plugins\F34Online.dll") }            # Fallout 34 Online switched on
+function Test-Installed($e) { return (Test-Path (Join-Path $GameDir[$e.d] $e.c)) }
+function Get-Wanted     { return @($Files | Where-Object { -not $_.opt -or ($_.opt -eq 'online' -and (Test-Online)) }) }
+function Get-Broken     { return @(Get-Wanted | Where-Object { -not (Test-Installed $_) }) }             # wanted but not in the game folder
+function Get-ModState($e) {
+  if ($e.opt -eq 'online' -and -not (Test-Online)) { return 'not needed' }
+  if (Test-Installed $e) { return 'installed' }
+  if (Get-Staged $e) { return 'downloaded' }
+  if (Test-Path "$Stage\$($e.d)\$($e.m)__*.part") { return 'downloading...' }
+  return 'MISSING'
+}
+function Test-GameRunning { return [bool](Get-Process -Name Fallout4 -ErrorAction SilentlyContinue) }
+function Set-IniValue($path, $section, $key, $value) {      # set one key, keep everything else as it is
+  $lines = @(); if (Test-Path $path) { $lines = @(Get-Content $path) }
+  $out = New-Object System.Collections.Generic.List[string]; $in = $false; $done = $false; $found = $false
+  foreach ($l in $lines) {
+    if ($l -match '^\s*\[(.+?)\]\s*$') {
+      if ($in -and -not $done) { $out.Add("$key=$value"); $done = $true }
+      $in = ($Matches[1] -ieq $section); if ($in) { $found = $true }
+      $out.Add($l); continue
+    }
+    if ($in -and -not $done -and $l -match ('^\s*' + [regex]::Escape($key) + '\s*=')) { $out.Add("$key=$value"); $done = $true; continue }
+    $out.Add($l)
+  }
+  if (-not $done) { if (-not $found) { $out.Add("[$section]") }; $out.Add("$key=$value") }
+  Set-Content $path $out
+}
+function Backup-Once($path) {
+  if (-not (Test-Path $path)) { return }
+  if (-not (Test-Path "$path.pre-fix")) { Copy-Item $path "$path.pre-fix" }
+  $it = Get-Item $path; if ($it.IsReadOnly) { $it.IsReadOnly = $false }
+}
+function Test-FixesApplied { return ((Test-Path "$Docs\Fallout4Custom.ini") -and [bool](Select-String -Path "$Docs\Fallout4Custom.ini" -Pattern '^\s*bAlwaysActive\s*=\s*1' -Quiet)) }
+function Set-PluginActive($name, [bool]$on) {                # Fallout 4 plugins.txt: "*Name" = active, "Name" = inactive
+  $pt = "$env:LOCALAPPDATA\Fallout4\plugins.txt"; New-Item -ItemType Directory (Split-Path $pt) -Force | Out-Null
+  $lines = @(); if (Test-Path $pt) { $lines = @(Get-Content $pt) }
+  $rx = '^\*?' + [regex]::Escape($name) + '\s*$'; $want = $name; if ($on) { $want = "*$name" }
+  if ($lines | Where-Object { $_ -match $rx }) { $lines = $lines | ForEach-Object { if ($_ -match $rx) { $want } else { $_ } } }
+  else { $lines += $want }
+  Set-Content $pt $lines
+}
 function Get-MissingReqs { @($Req.GetEnumerator() | Where-Object { -not (Test-Path (Join-Path $Fo4 $_.Value)) }) }
 function Say($t, $c = 'Gray') { Write-Host $t -ForegroundColor $c }
 function Test-ConverterRunning { return [bool](Get-Process -Name Fallout34Setup, f34conv -ErrorAction SilentlyContinue) }
@@ -188,9 +234,8 @@ function Show-Status {
   Say ("Free space        : {0}: {1} GB    {2}: {3} GB" -f (Get-Item $Fo4).PSDrive.Name, (Get-FreeGB $Fo4), (Get-Item $Root).PSDrive.Name, (Get-FreeGB $Root))
   Say "`nDownloads / installs:"
   foreach ($e in $Files) {
-    $dl = [bool](Get-Staged $e); $in = Test-Path "$Stage\.installed\$($e.m)"
-    $s = if ($in) {'installed'} elseif ($dl) {'downloaded'} else {'--'}
-    Say ("  {0,-40} {1}" -f $e.n, $s) $(if ($in) {'Green'} elseif ($dl) {'Yellow'} else {'DarkGray'})
+    $s = Get-ModState $e
+    Say ("  {0,-40} {1}" -f $e.n, $s) $(if ($s -eq 'installed') {'Green'} elseif ($s -eq 'MISSING') {'Red'} elseif ($s -eq 'not needed') {'DarkGray'} else {'Yellow'})
   }
   Say "`nFiles the Fallout 34 installer checks for:"
   foreach ($r in $Req.GetEnumerator()) { $ok = Test-Path (Join-Path $Fo4 $r.Value); Say ("  {0,-40} {1}" -f $r.Key, $(if ($ok) {'OK'} else {'MISSING'})) $(if ($ok) {'Green'} else {'Red'}) }
@@ -249,8 +294,8 @@ function Set-NxmHandler([switch]$Restore) {
   Set-Item "$k\shell\open\command" -Value ('"{0}\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}" -Nxm "%1"' -f $env:WINDIR, $PSCommandPath)
 }
 function Do-Download {
-  $todo = @($Files | Where-Object { -not (Get-Staged $_) })
-  if (-not $todo) { Say 'All 14 files already downloaded.' Green; return }
+  $todo = @(Get-Broken | Where-Object { -not (Get-Staged $_) })
+  if (-not $todo) { Say 'Nothing to download.' Green; return }
   $null = Get-ApiKey -Ask
   try { $me = Invoke-Nexus 'users/validate.json' } catch { Remove-Item $KeyFile -ErrorAction SilentlyContinue; throw "Nexus rejected that API key: $($_.Exception.Message)" }
   Say ("Nexus account: {0}  (premium: {1})" -f $me.name, $me.is_premium)
@@ -269,14 +314,14 @@ function Do-Download {
     # one tab at a time: the next page opens by itself as soon as the click on the current one is detected
     $opened = @{}
     while ($true) {
-      $next = $Files | Where-Object { -not (Get-Staged $_) -and -not (Test-Path "$Stage\$($_.d)\$($_.m)__*.part") } | Select-Object -First 1
+      $next = $todo | Where-Object { -not (Get-Staged $_) -and -not (Test-Path "$Stage\$($_.d)\$($_.m)__*.part") } | Select-Object -First 1
       if ($next -and -not $opened[$next.m]) {
         $opened[$next.m] = $true
         Start-Process "https://www.nexusmods.com/$($next.g)/mods/$($next.m)?tab=files&file_id=$($next.f)&nmm=1"
       }
       Clear-Host; Say 'Click SLOW DOWNLOAD in the tab that just opened - the next tab opens by itself.   R = reopen tab   Q = stop' Cyan
       $left = 0
-      foreach ($e in $Files) {
+      foreach ($e in $todo) {
         $done = [bool](Get-Staged $e); $part = Test-Path "$Stage\$($e.d)\$($e.m)__*.part"
         if (-not $done) { $left++ }
         $st = if ($done) {'done'} elseif ($part) {'downloading...'} elseif ($next -and $e.m -eq $next.m) {'>>> CLICK SLOW DOWNLOAD <<<'} else {'queued'}
@@ -299,10 +344,9 @@ function Do-Install {
   $7z = (Get-Item $7z).FullName; $sep = [IO.Path]::DirectorySeparatorChar
   $markers = 'meshes','textures','sound','music','scripts','interface','f4se','mcm','materials','strings','menus','shaders','lodsettings','video'
   $manual = @()
-  foreach ($e in $Files) {
+  foreach ($e in (Get-Broken)) {
     $a = Get-Staged $e
-    if (-not $a) { continue }
-    if (Test-Path "$Stage\.installed\$($e.m)") { continue }
+    if (-not $a) { Say "not downloaded yet: $($e.n)" Yellow; continue }
     $ready = "$Stage\_ready\$($e.m)"          # install choices already made (folder laid out like the game folder)
     if (Test-Path $ready) {
       robocopy $ready $GameDir[$e.d] /E /NFL /NDL /NJH /NJS /NP | Out-Null
@@ -349,6 +393,9 @@ function Do-Install {
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     Say "installed  $($e.n)  ->  $dst" Green
   }
+  foreach ($e in (Get-Broken)) {                              # unpacked but the expected file did not appear
+    if ((Get-Staged $e) -and -not ($manual | Where-Object { $_.StartsWith($e.n) })) { $manual += "$($e.n)  (unpacked, but '$($e.c)' is not in the game folder - check the archive by hand)" }
+  }
   if ($manual) { Say "`nThese were NOT installed - install them by hand from the extracted folders shown:" Yellow; $manual | ForEach-Object { Say "  $_" Yellow }; $manual | Set-Content "$Stage\needs_manual.txt" }
   else { Remove-Item "$Stage\needs_manual.txt" -ErrorAction SilentlyContinue }
   Enable-Plugins
@@ -387,7 +434,7 @@ function Do-Run {
   Say "Installer: $Inst  (version $((Get-Content "$Inst\VERSION" -ErrorAction SilentlyContinue | Select-Object -First 1)))"
   $bak = "$Root\Backup_preF34"; New-Item -ItemType Directory $bak -Force | Out-Null      # backups first, never overwritten
   if ((Test-Path "$env:LOCALAPPDATA\Fallout4\plugins.txt") -and -not (Test-Path "$bak\plugins.txt")) { Copy-Item "$env:LOCALAPPDATA\Fallout4\plugins.txt" $bak }
-  if (-not (Test-Path "$bak\MyGames_Fallout4")) { robocopy "$env:USERPROFILE\Documents\My Games\Fallout4" "$bak\MyGames_Fallout4" /E /NFL /NDL /NJH /NJS /NP | Out-Null }
+  if (-not (Test-Path "$bak\MyGames_Fallout4")) { robocopy $Docs "$bak\MyGames_Fallout4" /E /NFL /NDL /NJH /NJS /NP | Out-Null }
   Enable-Plugins
   $ini = "$Inst\installer.ini"; if (-not (Test-Path "$ini.orig")) { Copy-Item $ini "$ini.orig" }
   $t = Get-Content $ini -Raw
@@ -402,16 +449,87 @@ function Do-Run {
   $out = @(Get-ChildItem "$Fo4\Data" -File | Where-Object Name -match '34' )
   if ($out | Where-Object Name -eq 'Fallout34.esm') {
     $out | Select-Object Name, @{ n = 'MB'; e = { [math]::Round($_.Length / 1MB) } } | Format-Table -AutoSize | Out-Host
-    Say 'Converted files are in place. Start the game with f4se_loader.exe.' Green
+    Say 'Converted files are in place.' Green
+    try { Do-Fixes } catch { Say "Game fixes not applied: $($_.Exception.Message)" Yellow }
+    Say 'Start the game with f4se_loader.exe (PLAY button).' Green
   } else {
     Say 'Fallout34.esm is NOT in Fallout 4\Data. If the setup window is still open, let it finish; if it closed, it was cancelled or failed.' Yellow
     Say "Logs: look in the work folder ($Root\Fallout34_Work or <Fallout 4>\Fallout34_Work) and check the last lines of convert.log there." Yellow
   }
 }
 
+# ------------------------------------------------------------------ maintenance: repair, game fixes, online switch
+function Do-Repair {                                         # anything wanted that is not in the game folder: download + install
+  $b = Get-Broken
+  if (-not $b) { Say 'All mods are in place.' Green; return }
+  Say ("Missing from the game folders: " + (($b | ForEach-Object n) -join ', ')) Yellow
+  Do-Download; Do-Install
+  $b = Get-Broken
+  if ($b) { Say ("Still missing: " + (($b | ForEach-Object n) -join ', ')) Red } else { Say 'All mods are in place.' Green }
+}
+function Do-Fixes {                                          # settings the game needs to behave with Fallout 34
+  if (Test-GameRunning) { throw 'Close Fallout 4 first.' }
+  if (-not (Test-Path $Docs)) { throw "Fallout 4 settings folder not found: $Docs  (start the game once from Steam's launcher, then retry)" }
+  $custom = "$Docs\Fallout4Custom.ini"; $prefs = "$Docs\Fallout4Prefs.ini"; $ini = "$Docs\Fallout4.ini"
+  Backup-Once $custom; Set-IniValue $custom 'General' 'bAlwaysActive' '1'
+  Say 'bAlwaysActive=1   (the game keeps running when it is not the active window)' Green
+  if (Test-Path $prefs) {
+    Backup-Once $prefs; Set-IniValue $prefs 'Display' 'bFull Screen' '0'; Set-IniValue $prefs 'Display' 'bBorderless' '1'
+    Say 'borderless window (exclusive fullscreen can leave a black screen at startup)' Green
+  }
+  if (-not (Test-Path "$Fo4\Data\LondonWorldSpace.esm")) {  # leftovers of an uninstalled Fallout London
+    if ((Test-Path $ini) -and (Select-String -Path $ini -Pattern 'LondonWorldSpace' -Quiet)) {
+      Backup-Once $ini; (Get-Content $ini) -replace ',\s*LondonWorldSpace[^,]*', '' | Set-Content $ini
+      Say 'removed Fallout London archive entries from Fallout4.ini' Green
+    }
+    $pt = "$env:LOCALAPPDATA\Fallout4\plugins.txt"
+    if ((Test-Path $pt) -and (Select-String -Path $pt -Pattern 'LondonWorldSpace' -Quiet)) {
+      Backup-Once $pt; (Get-Content $pt) | Where-Object { $_ -notmatch 'LondonWorldSpace' } | Set-Content $pt
+      Say 'removed Fallout London plugins from plugins.txt' Green
+    }
+  }
+}
+function Do-BlackScreenFix {                                 # game stuck on a black screen: close it, fix the settings, start it again
+  if (Test-GameRunning) {
+    Say 'This closes Fallout 4. Anything not saved is lost.' Yellow
+    Read-Host 'Press Enter to continue (or close this window to cancel)' | Out-Null
+    Stop-Process -Name Fallout4 -Force -ErrorAction SilentlyContinue
+    for ($i = 0; $i -lt 20 -and (Test-GameRunning); $i++) { Start-Sleep -Milliseconds 500 }
+    if (Test-GameRunning) { throw 'Fallout 4 would not close. End it in Task Manager and try again.' }
+  }
+  Do-Fixes
+  if (-not (Test-Path "$Fo4\f4se_loader.exe")) { throw 'f4se_loader.exe is missing - press REPAIR MODS.' }
+  Start-Process "$Fo4\f4se_loader.exe" -WorkingDirectory $Fo4
+  Say 'Fallout 4 is starting. Click into the game window and leave it in front; the first load can take a minute or two.' Green
+}
+function Do-ToggleOnline {                                   # Fallout 34 Online on/off without re-running the converter
+  if (Test-GameRunning) { throw 'Close Fallout 4 first.' }
+  $dll = "$Fo4\Data\F4SE\Plugins\F34Online.dll"; $off = "$dll.off"
+  if (Test-Path $dll) {
+    Remove-Item $off -Force -ErrorAction SilentlyContinue; Rename-Item $dll 'F34Online.dll.off'
+    Set-PluginActive 'F34Online.esp' $false
+    Say 'Fallout 34 Online is OFF (single-player: VATS and pausing work normally).' Green
+  } else {
+    if (Test-Path $off) { Rename-Item $off 'F34Online.dll' }
+    else {
+      $src = "$Inst\files\optional\f34online"
+      if (-not (Test-Path $src)) { throw "Online files not found in the installer: $src" }
+      robocopy $src $Fo4 /E /NFL /NDL /NJH /NJS /NP | Out-Null
+      if ($LASTEXITCODE -ge 8) { throw 'copying the Online files failed' }
+    }
+    Set-PluginActive 'F34Online.esp' $true
+    Say 'Fallout 34 Online is ON.' Green
+    if (Get-Broken) { Say 'It needs F4SE Menu Framework and FallSouls - getting them now.' Yellow; Do-Repair }
+  }
+}
+
 # ------------------------------------------------------------------ step runner / what is next
 function Invoke-Step($c) {
   switch ($c) {
+    'R' { Do-Repair }
+    'F' { Do-Fixes }
+    'B' { Do-BlackScreenFix }
+    'O' { Do-ToggleOnline }
     '1' { Do-Downgrade }
     '2' { Do-Download }
     '3' { Do-Install }
@@ -425,10 +543,15 @@ function Invoke-Step($c) {
 }
 function Get-NextStep {
   if ((Get-Fo4Version) -notlike "$Want*") { return @{ s = '1'; t = 'Downgrade Fallout 4 to 1.10.984' } }
-  if (@($Files | Where-Object { -not (Get-Staged $_) }).Count) { return @{ s = '2'; t = 'Download the required mods' } }
-  if (@($Files | Where-Object { -not (Test-Path "$Stage\.installed\$($_.m)") }).Count -or @(Get-MissingReqs).Count) { return @{ s = '3'; t = 'Install the mods' } }
-  if (-not (Test-Path "$Fo4\Data\Fallout34.esm")) { return @{ s = '4'; t = 'Run the Fallout 34 converter (2-4 hours)' } }
-  return @{ s = ''; t = 'All done - press PLAY' }
+  $broken = Get-Broken
+  if (Test-Path "$Fo4\Data\Fallout34.esm") {                 # already converted: maintenance only
+    if ($broken) { return @{ s = 'R'; t = "$($broken.Count) mod(s) missing - press REPAIR MODS" } }
+    if (-not (Test-FixesApplied)) { return @{ s = 'F'; t = 'Press APPLY GAME FIXES, then PLAY' } }
+    return @{ s = ''; t = 'All done - press PLAY' }
+  }
+  if (@($broken | Where-Object { -not (Get-Staged $_) }).Count) { return @{ s = '2'; t = 'Download the required mods' } }
+  if ($broken -or @(Get-MissingReqs).Count) { return @{ s = '3'; t = 'Install the mods' } }
+  return @{ s = '4'; t = 'Run the Fallout 34 converter (2-4 hours)' }
 }
 
 # ------------------------------------------------------------------ entry
@@ -442,7 +565,7 @@ if ($Step) {                                       # one step in this console (s
 if ($Console) {                                    # old text menu
   while ($true) {
     Show-Status
-    Say '[A] Do everything that is left    [1] Downgrade   [2] Download mods   [3] Install mods   [4] Run converter   [Q] Quit' Cyan
+    Say '[A] Do everything left  [1] Downgrade  [2] Download  [3] Install  [4] Run converter  [R] Repair mods  [F] Game fixes  [B] Fix black screen  [O] Online on/off  [Q] Quit' Cyan
     $c = (Read-Host 'Choose').Trim().ToUpper()
     if ($c -eq 'Q') { return }
     try { Invoke-Step $c } catch { Say "`nERROR: $($_.Exception.Message)" Red }
@@ -468,7 +591,7 @@ $fBig   = New-Object System.Drawing.Font('Consolas', 22, [System.Drawing.FontSty
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text            = 'Fallout 34 Setup'
-$form.ClientSize      = New-Object System.Drawing.Size(900, 654)
+$form.ClientSize      = New-Object System.Drawing.Size(900, 742)
 $form.StartPosition   = 'CenterScreen'
 $form.FormBorderStyle = 'FixedSingle'
 $form.MaximizeBox     = $false
@@ -521,23 +644,27 @@ $null      = New-Label 'Fallout 3 + New Vegas inside Fallout 4' 18 54 870 20 $fM
 $lblVer    = New-Label '' 18 84 870 22 $fMono $cFg
 $lblSpace  = New-Label '' 18 106 870 22 $fMono $cFg
 $lblInst   = New-Label '' 18 128 870 22 $fMono $cFg
-$null      = New-Label 'REQUIRED MODS' 15 160 400 20 $fBold $cDim
+$null      = New-Label 'MODS' 15 160 400 20 $fBold $cDim
 $null      = New-Label 'CHECKS' 520 160 300 20 $fBold $cDim
-$lvMods    = New-List 15 184 490 300 330 138
-$lvReq     = New-List 520 184 365 300 235 108
-$lblNext   = New-Label '' 15 496 870 26 $fBold $cWarn
-$btn1      = New-Button '1  DOWNGRADE'     15 530 150
-$btn2      = New-Button '2  DOWNLOAD MODS' 175 530 150
-$btn3      = New-Button '3  INSTALL MODS'  335 530 150
-$btn4      = New-Button '4  RUN CONVERTER' 495 530 170
-$btnA      = New-Button 'DO EVERYTHING LEFT' 675 530 210
-$btnPlay   = New-Button 'PLAY FALLOUT 34'  15 578 310
-$btnFolder = New-Button 'OPEN PROJECT FOLDER' 335 578 330
-$btnQuit   = New-Button 'QUIT' 675 578 210
-$lblStatus = New-Label 'Ready.' 15 626 870 22 $fMono $cDim
+$lvMods    = New-List 15 184 490 340 330 138
+$lvReq     = New-List 520 184 365 340 235 108
+$lblNext   = New-Label '' 15 536 870 26 $fBold $cWarn
+$btn1      = New-Button '1  DOWNGRADE'     15 570 150
+$btn2      = New-Button '2  DOWNLOAD MODS' 175 570 150
+$btn3      = New-Button '3  INSTALL MODS'  335 570 150
+$btn4      = New-Button '4  RUN CONVERTER' 495 570 170
+$btnA      = New-Button 'DO EVERYTHING LEFT' 675 570 210
+$btnR      = New-Button 'REPAIR MODS'      15 618 210
+$btnF      = New-Button 'APPLY GAME FIXES' 235 618 210
+$btnB      = New-Button 'FIX BLACK SCREEN' 455 618 210
+$btnO      = New-Button 'ONLINE'           675 618 210
+$btnPlay   = New-Button 'PLAY FALLOUT 34'  15 666 310
+$btnFolder = New-Button 'OPEN PROJECT FOLDER' 335 666 330
+$btnQuit   = New-Button 'QUIT' 675 666 210
+$lblStatus = New-Label 'Ready.' 15 714 870 22 $fMono $cDim
 
-$btn1.Tag = '1'; $btn2.Tag = '2'; $btn3.Tag = '3'; $btn4.Tag = '4'; $btnA.Tag = 'A'
-$stepButtons = @($btn1, $btn2, $btn3, $btn4, $btnA)
+$btn1.Tag = '1'; $btn2.Tag = '2'; $btn3.Tag = '3'; $btn4.Tag = '4'; $btnA.Tag = 'A'; $btnR.Tag = 'R'; $btnF.Tag = 'F'; $btnO.Tag = 'O'; $btnB.Tag = 'B'
+$stepButtons = @($btn1, $btn2, $btn3, $btn4, $btnA, $btnR, $btnF, $btnO)
 
 $modRows = @{}
 foreach ($e in $Files) { $modRows[$e.m] = New-Row $lvMods $e.n }
@@ -546,6 +673,8 @@ foreach ($r in $Req.GetEnumerator()) { $reqRows[$r.Key] = New-Row $lvReq $r.Key 
 $rowFo3  = New-Row $lvReq 'Fallout 3 plugins'
 $rowFnv  = New-Row $lvReq 'New Vegas plugins'
 $rowConv = New-Row $lvReq 'Fallout 34 converted'
+$rowFix  = New-Row $lvReq 'Game fixes'
+$rowOn   = New-Row $lvReq 'Fallout 34 Online'
 
 $script:Child = $null
 $script:ChildStep = ''
@@ -554,7 +683,8 @@ function Test-Busy { return [bool]($script:Child -and -not $script:Child.HasExit
 
 function Start-Step($s) {
   if ((Test-Busy) -or (Test-ConverterRunning)) { return }
-  $a = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Step {1} -Fo4 "{2}" -Fo3 "{3}" -Fnv "{4}" -Root "{5}" -Inst "{6}"' -f $PSCommandPath, $s, $Fo4, $Fo3, $Fnv, $Root, $Inst
+  if ((Test-GameRunning) -and $s -ne 'B') { return }
+  $a = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -Step {1} -Fo4 "{2}" -Fo3 "{3}" -Fnv "{4}" -Root "{5}" -Inst "{6}" -Docs "{7}"' -f $PSCommandPath, $s, $Fo4, $Fo3, $Fnv, $Root, $Inst, $Docs
   $script:Child = Start-Process "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $a -PassThru
   $script:ChildStep = $s
   Update-Ui
@@ -570,13 +700,11 @@ function Update-Ui {
     if ($iv) { $lblInst.Text = "Installer         : Fallout 34 $iv"; $lblInst.ForeColor = $cFg } else { $lblInst.Text = "Installer         : NOT FOUND  $Inst"; $lblInst.ForeColor = $cBad }
 
     foreach ($e in $Files) {
-      $in   = Test-Path "$Stage\.installed\$($e.m)"
-      $dl   = [bool](Get-Staged $e)
-      $part = Test-Path "$Stage\$($e.d)\$($e.m)__*.part"
-      if     ($in)   { Set-Row $modRows[$e.m] 'installed'      $cFg }
-      elseif ($dl)   { Set-Row $modRows[$e.m] 'downloaded'     $cWarn }
-      elseif ($part) { Set-Row $modRows[$e.m] 'downloading...' $cWarn }
-      else           { Set-Row $modRows[$e.m] 'not downloaded' $cDim }
+      $st = Get-ModState $e
+      if     ($st -eq 'installed')  { Set-Row $modRows[$e.m] $st $cFg }
+      elseif ($st -eq 'MISSING')    { Set-Row $modRows[$e.m] $st $cBad }
+      elseif ($st -eq 'not needed') { Set-Row $modRows[$e.m] $st $cDim }
+      else                          { Set-Row $modRows[$e.m] $st $cWarn }
     }
     foreach ($r in $Req.GetEnumerator()) {
       if (Test-Path (Join-Path $Fo4 $r.Value)) { Set-Row $reqRows[$r.Key] 'OK' $cFg } else { Set-Row $reqRows[$r.Key] 'MISSING' $cBad }
@@ -585,16 +713,24 @@ function Update-Ui {
     if (Test-Path "$env:LOCALAPPDATA\FalloutNV\plugins.txt") { Set-Row $rowFnv 'enabled' $cFg } else { Set-Row $rowFnv 'not yet' $cDim }
     $converted = Test-Path "$Fo4\Data\Fallout34.esm"
     if ($converted) { Set-Row $rowConv 'YES' $cFg } else { Set-Row $rowConv 'not yet' $cDim }
+    if (Test-FixesApplied) { Set-Row $rowFix 'applied' $cFg } else { Set-Row $rowFix 'not applied' $cWarn }
+    $online = Test-Online
+    if ($online) { Set-Row $rowOn 'ON' $cFg; $btnO.Text = 'TURN ONLINE OFF' } else { Set-Row $rowOn 'off' $cDim; $btnO.Text = 'TURN ONLINE ON' }
+    $gameUp = Test-GameRunning
 
     $conv = Test-ConverterRunning
-    $busy = (Test-Busy) -or $conv
+    $busy = (Test-Busy) -or $conv -or $gameUp
     $next = Get-NextStep
     foreach ($b in $stepButtons) {
       $b.Enabled = -not $busy
       if ((-not $busy) -and $b.Tag -eq $next.s) { $b.FlatAppearance.BorderSize = 3 } else { $b.FlatAppearance.BorderSize = 1 }
     }
     $btnPlay.Enabled = ($converted -and -not $busy)
-    if ($conv) {
+    $btnB.Enabled    = -not ((Test-Busy) -or $conv)
+    if ($gameUp) {
+      $lblNext.Text   = 'FALLOUT 4 IS RUNNING'
+      $lblStatus.Text = 'Buttons unlock when you close the game. Stuck on a black screen? Press FIX BLACK SCREEN.'
+    } elseif ($conv) {
       $lblNext.Text   = 'CONVERTER RUNNING   ' + (Get-ConverterStage)
       $lblStatus.Text = 'Leave it alone until the Fallout 34 setup window says it is finished (2-4 hours). Buttons are locked meanwhile.'
     } elseif ($busy) {
@@ -608,6 +744,7 @@ function Update-Ui {
 }
 
 foreach ($b in $stepButtons) { $b.Add_Click({ Start-Step $this.Tag }) }
+$btnB.Add_Click({ Start-Step $this.Tag })
 $btnPlay.Add_Click({ Start-Process "$Fo4\f4se_loader.exe" -WorkingDirectory $Fo4 })
 $btnFolder.Add_Click({ Start-Process explorer.exe $Root })
 $btnQuit.Add_Click({ $form.Close() })
