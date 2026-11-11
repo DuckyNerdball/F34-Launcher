@@ -17,6 +17,9 @@ Ships no game or mod files. Everything comes from the user's own Steam and Nexus
 - **Games**: found through Steam. If one isn't found, the launcher asks for its folder.
 - Choices are remembered in `tools\settings.json`.
 
+- <img width="897" height="769" alt="image" src="https://github.com/user-attachments/assets/c45a5578-28ed-40a6-aca2-b2701b5be890" />
+
+
 ## Setup steps
 
 1. **Downgrade** Fallout 4 to Next-Gen 1.10.984 (DepotDownloader, user's own Steam login).
